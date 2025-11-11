@@ -2,21 +2,18 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: nodejs-app
-  namespace: argocd
+  namespace: argocd    # <- Must be here under metadata
 spec:
-project: default
-source:
-repoURL: 'https://github.com/srikanthgorrepatig/gitops-node-argocd'
-targetRevision: HEAD
-path: charts/nodejs-app
-helm:
-valueFiles: []
-destination:
-server: 'https://kubernetes.default.svc'
-namespace: default
-syncPolicy:
-automated:
-prune: true
-selfHeal: true
-syncOptions:
-- CreateNamespace=true
+  project: default
+  source:
+    repoURL: 'https://github.com/srikanthgorrepatig/gitops-node-argocd'
+    targetRevision: HEAD
+    path: charts/nodejs-app
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+  

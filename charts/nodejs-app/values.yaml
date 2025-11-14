@@ -3,7 +3,7 @@ service:
   port: 3000
 
 image:
-  repository: srikanthgorrepatig/gitops-node-argocd
+  repository: srikanthawsos/gitops-node-argocd
   tag: latest
   pullPolicy: IfNotPresent
 

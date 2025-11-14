@@ -1,14 +1,11 @@
-FROM node:18-alpine
-
+FROM node:18-alpine AS dependencies
 WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --only=production
 
-COPY package.json ./
-
-# Install production dependencies
-RUN npm install --only=production
-
+FROM node:18-alpine AS production
+WORKDIR /app
+COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
-
 EXPOSE 3000
-
 CMD ["node", "index.js"]

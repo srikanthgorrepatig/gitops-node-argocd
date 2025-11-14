@@ -12,6 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKERHUB_REPO }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,6 +30,11 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # ⬇⬇ Debug step added here
+      - name: Debug image value
+        run: |
+          echo "Docker image = $IMAGE"
 
       - name: Build and push
         id: build

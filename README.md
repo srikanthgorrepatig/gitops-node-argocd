@@ -33,20 +33,6 @@ Developer → GitHub → GitHub Actions → Docker Hub → GitOps Repo → ArgoC
 
 ---
 
-## 📂 Project Structure
-
-app/
-├── index.js
-├── package.json
-├── Dockerfile
-
-manifests/
-├── deployment.yaml
-├── service.yaml
-
-
----
-
 ## 🐳 Dockerfile (Distroless Multi-Stage)
 
 ```dockerfile

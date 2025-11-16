@@ -1,10 +1,8 @@
 service:
   type: ClusterIP
   port: 3000
-
 image:
   repository: srikanthawsos/gitops-node-argocd
-  tag: latest
+  tag: b5fd263d3e4827ad6cd4d7bade724bd7d198e5e7
   pullPolicy: IfNotPresent
-
 replicaCount: 1

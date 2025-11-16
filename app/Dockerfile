@@ -1,21 +1,14 @@
-# 1. Build dependencies with alpine image
-FROM node:18-alpine AS build
+FROM node:18-alpine
+
 WORKDIR /app
 
-# Copy only package.json (you do NOT have package-lock.json)
 COPY package.json ./
 
-# Install only production dependencies
-RUN npm install --omit=dev
+# npm install instead of npm ci (because you have no package-lock.json)
+RUN npm install --only=production
 
-# Copy application source
 COPY . .
 
-# 2. Then run in distroless image (much smaller)
-FROM gcr.io/distroless/nodejs18
-
-WORKDIR /app
-COPY --from=build /app .
-
 EXPOSE 3000
-CMD ["index.js"]
+
+CMD ["node", "index.js"]

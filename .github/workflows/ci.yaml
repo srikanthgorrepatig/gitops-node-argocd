@@ -5,7 +5,6 @@ on:
     branches:
       - master
 
-# Add permissions for pushing changes back to repo
 permissions:
   contents: write
 
@@ -14,27 +13,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ------------------------------------------------------
-      # CHECKOUT FULL HISTORY (required for git pull --rebase)
-      # ------------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # -------------------------
-      # SET DOCKER IMAGE VARIABLE
-      # -------------------------
       - name: Set IMAGE variable
         run: echo "IMAGE=srikanthawsos/gitops-node-argocd" >> $GITHUB_ENV
 
-      - name: Debug image value
-        run: echo "Docker image = $IMAGE"
-
-      # ------------------------------------------------------
-      # VALIDATE DOCKERHUB CREDENTIALS
-      # ------------------------------------------------------
+      # ✅ UPDATED: Use the actual secret names you have
       - name: Validate DockerHub secrets
         run: |
           if [ -z "${{ secrets.DOCKERHUB_USERNAME }}" ]; then
@@ -42,25 +30,21 @@ jobs:
             exit 1
           fi
 
-          if [ -z "${{ secrets.DOCKERHUB_PASSWORD }}" ]; then
-            echo "❌ ERROR: DOCKERHUB_PASSWORD is NOT set!"
+          if [ -z "${{ secrets.DOCKER_PASSWORD }}" ]; then
+            echo "❌ ERROR: DOCKER_PASSWORD is NOT set!"
             exit 1
           fi
 
-          echo "✔ DockerHub secrets validated."
+          echo "✅ DockerHub secrets validated."
 
-      # -------------------------------
-      # LOGIN TO DOCKER HUB
-      # -------------------------------
+      # ✅ UPDATED: Use DOCKER_PASSWORD instead of DOCKERHUB_PASSWORD
       - name: Docker Login
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
-      # ----------------------------------------------------
-      # BUILD IMAGE LOCALLY (for Snyk scanning)
-      # ----------------------------------------------------
+      # ... rest of your workflow remains the same
       - name: Build Docker image (local load)
         uses: docker/build-push-action@v4
         with:
@@ -68,9 +52,6 @@ jobs:
           load: true
           tags: ${{ env.IMAGE }}:${{ github.sha }}
 
-      # ---------------------------------------------
-      # SNYK IMAGE SECURITY SCAN - FAIL IF CRITICAL
-      # ---------------------------------------------
       - name: Scan Docker image with Snyk
         uses: snyk/actions/docker@master
         with:
@@ -79,9 +60,6 @@ jobs:
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
-      # -------------------------------------------
-      # PUSH DOCKER IMAGE (ONLY IF SCAN PASSES)
-      # -------------------------------------------
       - name: Build and Push Docker image
         uses: docker/build-push-action@v4
         with:
@@ -91,44 +69,26 @@ jobs:
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ github.sha }}
 
-      # ---------------------------------------------------------
-      # UPDATE HELM CHART IMAGE TAG (values.yaml)
-      # ---------------------------------------------------------
       - name: Update Helm chart image tag
         run: |
-          # Configure git identity
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions"
 
           TAG=${{ github.sha }}
           echo "🔧 Updating Helm chart image tag to: $TAG"
 
-          # Check if yq is available, if not install it
           if ! command -v yq &> /dev/null; then
-            echo "Installing yq..."
             sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
             sudo chmod +x /usr/local/bin/yq
           fi
 
-          # Update the values.yaml file
           yq eval -i ".image.tag = \"$TAG\"" charts/nodejs-app/values.yaml
 
-          # Check if there are changes
-          if git diff --quiet; then
-            echo "ℹ No changes to commit"
-            exit 0
-          fi
-
-          # Commit and push changes
           git add charts/nodejs-app/values.yaml
-          git commit -m "ci: update image tag to $TAG"
+          git commit -m "ci: update image tag to $TAG" || echo "ℹ No changes to commit"
           
-          # Pull latest changes and push
           git pull --rebase origin master
           git push origin master
 
-      # -------------------------------
-      # LOGOUT FROM DOCKER HUB
-      # -------------------------------
       - name: Docker Logout
         run: docker logout

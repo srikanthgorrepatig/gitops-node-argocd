@@ -13,54 +13,110 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # ------------------------------------------------------
+      # CHECKOUT REPOSITORY
+      # ------------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      # ------------------------------------------------------
+      # SET DOCKER IMAGE VARIABLE
+      # ------------------------------------------------------
       - name: Set IMAGE variable
         run: echo "IMAGE=srikanthawsos/gitops-node-argocd" >> $GITHUB_ENV
 
-      # ✅ UPDATED: Use the actual secret names you have
-      - name: Validate DockerHub secrets
+      - name: Debug image value
+        run: echo "Docker image = $IMAGE"
+
+      # ------------------------------------------------------
+      # VALIDATE ALL SECRETS WITH DETAILED ERROR MESSAGES
+      # ------------------------------------------------------
+      - name: Validate GitHub secrets
         run: |
+          echo "🔍 Checking GitHub secrets configuration..."
+          
+          # Check DockerHub username
           if [ -z "${{ secrets.DOCKERHUB_USERNAME }}" ]; then
             echo "❌ ERROR: DOCKERHUB_USERNAME is NOT set!"
+            echo "💡 How to fix:"
+            echo "   - Go to Repository Settings → Secrets and variables → Actions"
+            echo "   - Create secret named: DOCKERHUB_USERNAME"
+            echo "   - Value: Your Docker Hub username"
             exit 1
+          else
+            echo "✅ DOCKERHUB_USERNAME is set"
           fi
 
+          # Check Docker password
           if [ -z "${{ secrets.DOCKER_PASSWORD }}" ]; then
             echo "❌ ERROR: DOCKER_PASSWORD is NOT set!"
+            echo "💡 How to fix:"
+            echo "   - Go to Docker Hub → Account Settings → Security"
+            echo "   - Create Access Token with Read/Write permissions"
+            echo "   - Add token as DOCKER_PASSWORD secret in GitHub"
             exit 1
+          else
+            echo "✅ DOCKER_PASSWORD is set"
           fi
 
-          echo "✅ DockerHub secrets validated."
+          # Check Snyk token (using SHYX_TOKEN as shown in your secrets)
+          if [ -z "${{ secrets.SHYX_TOKEN }}" ]; then
+            echo "❌ ERROR: SHYX_TOKEN is NOT set!"
+            echo "💡 How to fix:"
+            echo "   - Go to https://snyk.io/account/"
+            echo "   - Copy your API token"
+            echo "   - Add it as SHYX_TOKEN secret in GitHub"
+            exit 1
+          else
+            echo "✅ SHYX_TOKEN is set"
+          fi
 
-      # ✅ UPDATED: Use DOCKER_PASSWORD instead of DOCKERHUB_PASSWORD
-      - name: Docker Login
+          echo "🎉 All secrets are properly configured!"
+          echo "📋 Summary:"
+          echo "   - DockerHub Username: ${{ secrets.DOCKERHUB_USERNAME }}"
+          echo "   - Docker Password: [hidden]"
+          echo "   - Snyk Token: [hidden]"
+
+      # ------------------------------------------------------
+      # DOCKER LOGIN
+      # ------------------------------------------------------
+      - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      # ... rest of your workflow remains the same
-      - name: Build Docker image (local load)
+      # ------------------------------------------------------
+      # BUILD DOCKER IMAGE LOCALLY (for Snyk scanning)
+      # ------------------------------------------------------
+      - name: Build Docker image for scanning
         uses: docker/build-push-action@v4
         with:
           context: ./app
           load: true
           tags: ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
+      # ------------------------------------------------------
+      # SNYK SECURITY SCAN (using SHYX_TOKEN secret)
+      # ------------------------------------------------------
       - name: Scan Docker image with Snyk
         uses: snyk/actions/docker@master
         with:
           image: ${{ env.IMAGE }}:${{ github.sha }}
           args: --severity-threshold=critical
         env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+          # Using SHYX_TOKEN as shown in your GitHub secrets
+          SNYK_TOKEN: ${{ secrets.SHYX_TOKEN }}
 
-      - name: Build and Push Docker image
+      # ------------------------------------------------------
+      # PUSH DOCKER IMAGE TO REGISTRY
+      # ------------------------------------------------------
+      - name: Build and push Docker image
         uses: docker/build-push-action@v4
         with:
           context: ./app
@@ -68,27 +124,66 @@ jobs:
           tags: |
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
+      # ------------------------------------------------------
+      # UPDATE HELM CHART WITH NEW IMAGE TAG
+      # ------------------------------------------------------
       - name: Update Helm chart image tag
         run: |
+          echo "🔧 Configuring git identity..."
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions"
 
           TAG=${{ github.sha }}
-          echo "🔧 Updating Helm chart image tag to: $TAG"
+          echo "🔄 Updating Helm chart image tag to: $TAG"
 
+          # Install yq if not available
           if ! command -v yq &> /dev/null; then
+            echo "📥 Installing yq for YAML processing..."
             sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
             sudo chmod +x /usr/local/bin/yq
           fi
 
+          # Update the values.yaml file
+          echo "📝 Updating charts/nodejs-app/values.yaml..."
           yq eval -i ".image.tag = \"$TAG\"" charts/nodejs-app/values.yaml
 
+          # Check if there are changes
+          if git diff --quiet; then
+            echo "ℹ No changes to commit - image tag is already $TAG"
+            exit 0
+          fi
+
+          # Commit and push changes
+          echo "💾 Committing changes..."
           git add charts/nodejs-app/values.yaml
-          git commit -m "ci: update image tag to $TAG" || echo "ℹ No changes to commit"
-          
+          git commit -m "ci: update image tag to $TAG"
+
+          echo "📤 Pushing changes to repository..."
           git pull --rebase origin master
           git push origin master
 
-      - name: Docker Logout
-        run: docker logout
+          echo "✅ Successfully updated Helm chart with new image tag"
+
+      # ------------------------------------------------------
+      # DOCKER LOGOUT (security best practice)
+      # ------------------------------------------------------
+      - name: Logout from Docker Hub
+        run: |
+          echo "🔒 Logging out from Docker Hub..."
+          docker logout
+        if: always()
+
+      # ------------------------------------------------------
+      # WORKFLOW SUCCESS MESSAGE
+      # ------------------------------------------------------
+      - name: Success notification
+        if: success()
+        run: |
+          echo "🎉 CI/CD Pipeline completed successfully!"
+          echo "📦 Image: ${{ env.IMAGE }}:${{ github.sha }}"
+          echo "🐳 Pushed to: Docker Hub"
+          echo "📊 Security: Snyk scan passed"
+          echo "📄 Helm: Chart updated with new tag"

@@ -23,6 +23,15 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       # ------------------------------------------------------
+      # SET UP DOCKER BUILDX (with proper cache support)
+      # ------------------------------------------------------
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
+          buildkitd-flags: --debug
+
+      # ------------------------------------------------------
       # SET DOCKER IMAGE VARIABLE
       # ------------------------------------------------------
       - name: Set IMAGE variable
@@ -75,10 +84,6 @@ jobs:
           fi
 
           echo "🎉 All secrets are properly configured!"
-          echo "📋 Summary:"
-          echo "   - DockerHub Username: ${{ secrets.DOCKERHUB_USERNAME }}"
-          echo "   - Docker Password: [hidden]"
-          echo "   - Snyk Token: [hidden]"
 
       # ------------------------------------------------------
       # DOCKER LOGIN
@@ -98,8 +103,8 @@ jobs:
           context: ./app
           load: true
           tags: ${{ env.IMAGE }}:${{ github.sha }}
+          # Remove cache-to for local build, only use cache-from
           cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       # ------------------------------------------------------
       # SNYK SECURITY SCAN (using SNYK_TOKEN secret)
@@ -114,7 +119,7 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
       # ------------------------------------------------------
-      # PUSH DOCKER IMAGE TO REGISTRY
+      # PUSH DOCKER IMAGE TO REGISTRY (with proper cache)
       # ------------------------------------------------------
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
@@ -124,6 +129,7 @@ jobs:
           tags: |
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ github.sha }}
+          # Cache configuration for push build
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

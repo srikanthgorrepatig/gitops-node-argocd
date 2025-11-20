@@ -62,16 +62,16 @@ jobs:
             echo "✅ DOCKER_PASSWORD is set"
           fi
 
-          # Check Snyk token (using SHYX_TOKEN as shown in your secrets)
-          if [ -z "${{ secrets.SHYX_TOKEN }}" ]; then
-            echo "❌ ERROR: SHYX_TOKEN is NOT set!"
+          # Check Snyk token (using SNYK_TOKEN as shown in your secrets)
+          if [ -z "${{ secrets.SNYK_TOKEN }}" ]; then
+            echo "❌ ERROR: SNYK_TOKEN is NOT set!"
             echo "💡 How to fix:"
             echo "   - Go to https://snyk.io/account/"
             echo "   - Copy your API token"
-            echo "   - Add it as SHYX_TOKEN secret in GitHub"
+            echo "   - Add it as SNYK_TOKEN secret in GitHub"
             exit 1
           else
-            echo "✅ SHYX_TOKEN is set"
+            echo "✅ SNYK_TOKEN is set"
           fi
 
           echo "🎉 All secrets are properly configured!"
@@ -102,7 +102,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       # ------------------------------------------------------
-      # SNYK SECURITY SCAN (using SHYX_TOKEN secret)
+      # SNYK SECURITY SCAN (using SNYK_TOKEN secret)
       # ------------------------------------------------------
       - name: Scan Docker image with Snyk
         uses: snyk/actions/docker@master
@@ -110,8 +110,8 @@ jobs:
           image: ${{ env.IMAGE }}:${{ github.sha }}
           args: --severity-threshold=critical
         env:
-          # Using SHYX_TOKEN as shown in your GitHub secrets
-          SNYK_TOKEN: ${{ secrets.SHYX_TOKEN }}
+          # Using SNYK_TOKEN as shown in your GitHub secrets
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
       # ------------------------------------------------------
       # PUSH DOCKER IMAGE TO REGISTRY

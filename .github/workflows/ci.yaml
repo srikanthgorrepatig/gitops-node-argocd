@@ -23,7 +23,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       # ------------------------------------------------------
-      # SET UP DOCKER BUILDX (with proper cache support)
+      # SET UP DOCKER BUILDX (with cache)
       # ------------------------------------------------------
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -41,49 +41,31 @@ jobs:
         run: echo "Docker image = $IMAGE"
 
       # ------------------------------------------------------
-      # VALIDATE ALL SECRETS WITH DETAILED ERROR MESSAGES
+      # VALIDATE ALL SECRETS
       # ------------------------------------------------------
       - name: Validate GitHub secrets
         run: |
-          echo "🔍 Checking GitHub secrets configuration..."
-          
-          # Check DockerHub username
+          echo "🔍 Checking GitHub secrets..."
+
           if [ -z "${{ secrets.DOCKERHUB_USERNAME }}" ]; then
-            echo "❌ ERROR: DOCKERHUB_USERNAME is NOT set!"
-            echo "💡 How to fix:"
-            echo "   - Go to Repository Settings → Secrets and variables → Actions"
-            echo "   - Create secret named: DOCKERHUB_USERNAME"
-            echo "   - Value: Your Docker Hub username"
+            echo "❌ ERROR: DOCKERHUB_USERNAME is missing"
             exit 1
-          else
-            echo "✅ DOCKERHUB_USERNAME is set"
           fi
+          echo "✅ DOCKERHUB_USERNAME is set"
 
-          # Check Docker password
-          if [ -z "${{ secrets.DOCKER_PASSWORD }}" ]; then
-            echo "❌ ERROR: DOCKER_PASSWORD is NOT set!"
-            echo "💡 How to fix:"
-            echo "   - Go to Docker Hub → Account Settings → Security"
-            echo "   - Create Access Token with Read/Write permissions"
-            echo "   - Add token as DOCKER_PASSWORD secret in GitHub"
+          if [ -z "${{ secrets.DOCKERHUB_PASSWORD }}" ]; then
+            echo "❌ ERROR: DOCKERHUB_PASSWORD is missing"
             exit 1
-          else
-            echo "✅ DOCKER_PASSWORD is set"
           fi
+          echo "✅ DOCKERHUB_PASSWORD is set"
 
-          # Check Snyk token (using SNYK_TOKEN as shown in your secrets)
           if [ -z "${{ secrets.SNYK_TOKEN }}" ]; then
-            echo "❌ ERROR: SNYK_TOKEN is NOT set!"
-            echo "💡 How to fix:"
-            echo "   - Go to https://snyk.io/account/"
-            echo "   - Copy your API token"
-            echo "   - Add it as SNYK_TOKEN secret in GitHub"
+            echo "❌ ERROR: SNYK_TOKEN is missing"
             exit 1
-          else
-            echo "✅ SNYK_TOKEN is set"
           fi
+          echo "✅ SNYK_TOKEN is set"
 
-          echo "🎉 All secrets are properly configured!"
+          echo "🎉 All secrets verified successfully!"
 
       # ------------------------------------------------------
       # DOCKER LOGIN
@@ -92,10 +74,10 @@ jobs:
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
       # ------------------------------------------------------
-      # BUILD DOCKER IMAGE LOCALLY (for Snyk scanning)
+      # BUILD DOCKER IMAGE LOCALLY (for scanning)
       # ------------------------------------------------------
       - name: Build Docker image for scanning
         uses: docker/build-push-action@v4
@@ -103,23 +85,33 @@ jobs:
           context: ./app
           load: true
           tags: ${{ env.IMAGE }}:${{ github.sha }}
-          # Remove cache-to for local build, only use cache-from
           cache-from: type=gha
 
       # ------------------------------------------------------
-      # SNYK SECURITY SCAN (using SNYK_TOKEN secret)
+      # INSTALL SNYK CLI (OFFICIAL, VERIFIED)
+      # ------------------------------------------------------
+      - name: Install Snyk CLI
+        uses: snyk/actions/setup@v3
+
+      # ------------------------------------------------------
+      # SNYK AUTHENTICATION
+      # ------------------------------------------------------
+      - name: Authenticate Snyk
+        run: snyk auth "${{ secrets.SNYK_TOKEN }}"
+
+      # ------------------------------------------------------
+      # SNYK SECURITY SCAN (Docker image)
       # ------------------------------------------------------
       - name: Scan Docker image with Snyk
-        uses: snyk/actions/docker@master
-        with:
-          image: ${{ env.IMAGE }}:${{ github.sha }}
-          args: --severity-threshold=critical
+        run: |
+          snyk test \
+            --docker $IMAGE:${{ github.sha }} \
+            --severity-threshold=critical
         env:
-          # Using SNYK_TOKEN as shown in your GitHub secrets
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
       # ------------------------------------------------------
-      # PUSH DOCKER IMAGE TO REGISTRY (with proper cache)
+      # BUILD & PUSH DOCKER IMAGE
       # ------------------------------------------------------
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
@@ -129,67 +121,53 @@ jobs:
           tags: |
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ github.sha }}
-          # Cache configuration for push build
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       # ------------------------------------------------------
-      # UPDATE HELM CHART WITH NEW IMAGE TAG
+      # UPDATE HELM CHART IMAGE TAG
       # ------------------------------------------------------
       - name: Update Helm chart image tag
         run: |
-          echo "🔧 Configuring git identity..."
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions"
 
           TAG=${{ github.sha }}
           echo "🔄 Updating Helm chart image tag to: $TAG"
 
-          # Install yq if not available
           if ! command -v yq &> /dev/null; then
-            echo "📥 Installing yq for YAML processing..."
-            sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+            sudo wget -qO /usr/local/bin/yq \
+              https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
             sudo chmod +x /usr/local/bin/yq
           fi
 
-          # Update the values.yaml file
-          echo "📝 Updating charts/nodejs-app/values.yaml..."
           yq eval -i ".image.tag = \"$TAG\"" charts/nodejs-app/values.yaml
 
-          # Check if there are changes
           if git diff --quiet; then
-            echo "ℹ No changes to commit - image tag is already $TAG"
+            echo "ℹ No Helm changes to commit"
             exit 0
           fi
 
-          # Commit and push changes
-          echo "💾 Committing changes..."
           git add charts/nodejs-app/values.yaml
           git commit -m "ci: update image tag to $TAG"
 
-          echo "📤 Pushing changes to repository..."
           git pull --rebase origin master
           git push origin master
 
-          echo "✅ Successfully updated Helm chart with new image tag"
-
       # ------------------------------------------------------
-      # DOCKER LOGOUT (security best practice)
+      # DOCKER LOGOUT
       # ------------------------------------------------------
       - name: Logout from Docker Hub
-        run: |
-          echo "🔒 Logging out from Docker Hub..."
-          docker logout
+        run: docker logout
         if: always()
 
       # ------------------------------------------------------
-      # WORKFLOW SUCCESS MESSAGE
+      # SUCCESS MESSAGE
       # ------------------------------------------------------
       - name: Success notification
         if: success()
         run: |
           echo "🎉 CI/CD Pipeline completed successfully!"
-          echo "📦 Image: ${{ env.IMAGE }}:${{ github.sha }}"
-          echo "🐳 Pushed to: Docker Hub"
-          echo "📊 Security: Snyk scan passed"
-          echo "📄 Helm: Chart updated with new tag"
+          echo "🐳 Docker image pushed: ${{ env.IMAGE }}:${{ github.sha }}"
+          echo "🔐 Snyk scan passed"
+          echo "📄 Helm chart updated"

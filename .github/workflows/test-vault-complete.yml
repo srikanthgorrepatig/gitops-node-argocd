@@ -1,0 +1,104 @@
+name: Test Vault + Docker + Trivy Integration
+
+on:
+  workflow_dispatch:
+
+env:
+  IMAGE: srikanthawsos/gitops-node-argocd
+
+jobs:
+  integration-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    # 1. Checkout code
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # 2. Setup Docker Buildx
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    # 3. CORE TEST: Retrieve secrets from Vault
+    - name: Retrieve secrets from Vault
+      id: vault
+      uses: hashicorp/vault-action@v3
+      with:
+        url: ${{ secrets.VAULT_ADDR }}
+        token: ${{ secrets.VAULT_TOKEN }}
+        secrets: |
+          secret/data/github-actions/docker DOCKERHUB_USERNAME | DOCKER_USERNAME ;
+          secret/data/github-actions/docker DOCKER_PASSWORD | DOCKER_PASSWORD ;
+
+    # 4. TEST 1: Verify Vault secret retrieval
+    - name: Verify Vault secrets
+      run: |
+        echo "=== TEST 1: VAULT SECRET RETRIEVAL ==="
+        if [ -n "${{ steps.vault.outputs.DOCKER_USERNAME }}" ] && [ -n "${{ steps.vault.outputs.DOCKER_PASSWORD }}" ]; then
+          echo "✅ SUCCESS: Secrets retrieved from Vault"
+          echo "Username: ${{ steps.vault.outputs.DOCKER_USERNAME }}"
+          echo "Password: [hidden]"
+        else
+          echo "❌ FAILED: Could not retrieve secrets from Vault"
+          exit 1
+        fi
+
+    # 5. TEST 2: Docker Hub authentication with Vault secrets
+    - name: Test Docker Hub login
+      run: |
+        echo "=== TEST 2: DOCKER HUB AUTHENTICATION ==="
+        echo "${{ steps.vault.outputs.DOCKER_PASSWORD }}" | docker login \
+          -u "${{ steps.vault.outputs.DOCKER_USERNAME }}" \
+          --password-stdin
+        if [ $? -eq 0 ]; then
+          echo "✅ SUCCESS: Docker Hub login using Vault secrets"
+        else
+          echo "❌ FAILED: Docker Hub authentication failed"
+          exit 1
+        fi
+
+    # 6. TEST 3: Build Docker image
+    - name: Build Docker image
+      uses: docker/build-push-action@v4
+      with:
+        context: ./app
+        load: true
+        tags: ${{ env.IMAGE }}:vault-test-${{ github.sha }}
+
+    # 7. TEST 4: Trivy security scan
+    - name: Scan with Trivy
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ env.IMAGE }}:vault-test-${{ github.sha }}
+        format: table
+        severity: CRITICAL,HIGH
+
+    # 8. TEST 5: Push image using Vault credentials
+    - name: Push Docker image
+      run: |
+        echo "=== TEST 5: DOCKER IMAGE PUSH ==="
+        docker push ${{ env.IMAGE }}:vault-test-${{ github.sha }}
+        if [ $? -eq 0 ]; then
+          echo "✅ SUCCESS: Image pushed using Vault credentials"
+        else
+          echo "❌ FAILED: Image push failed"
+          exit 1
+        fi
+
+    # 9. FINAL SUCCESS
+    - name: Success report
+      if: success()
+      run: |
+        echo ""
+        echo "🎉🎉🎉 ALL TESTS PASSED! 🎉🎉🎉"
+        echo ""
+        echo "✅ Vault Integration: WORKING"
+        echo "✅ Docker Hub: WORKING"  
+        echo "✅ Trivy Security: WORKING"
+        echo ""
+        echo "Your secrets are now managed by HashiCorp Vault!"
+
+    # 10. Cleanup
+    - name: Docker logout
+      if: always()
+      run: docker logout

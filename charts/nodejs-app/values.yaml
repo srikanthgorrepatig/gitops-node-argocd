@@ -3,6 +3,6 @@ service:
   port: 3000
 image:
   repository: srikanthawsos/gitops-node-argocd
-  tag: 2ad50efb6bd6deb0088a72c0508a2d2f16cdd932
+  tag: eb5e225c016e099472e4a0408b826b14abea073d
   pullPolicy: IfNotPresent
 replicaCount: 1

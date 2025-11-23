@@ -1,120 +1,32 @@
-name: "[TEST] Vault Integration - SAFE MODE"
+name: "[TEST] Vault Connection Only"
 
 on:
   workflow_dispatch:
 
-env:
-  IMAGE: srikanthawsos/gitops-node-argocd
-
 jobs:
-  vault-integration-test:
+  test-connection:
     runs-on: ubuntu-latest
-    
     steps:
-    # 1. Checkout code
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    # 2. Pre-test: Check Vault connectivity
-    - name: Test Vault connectivity
+    - name: Test Vault connection
       run: |
-        echo "=== PRE-TEST: VAULT CONNECTIVITY ==="
-        if curl -s -f "${{ secrets.VAULT_ADDR }}/v1/sys/health" > /dev/null; then
-          echo "✅ Vault server is reachable"
+        echo "Testing connection to: ${{ secrets.VAULT_ADDR }}"
+        echo "URL being tested: ${{ secrets.VAULT_ADDR }}/v1/sys/health"
+        
+        # Try different curl options
+        curl -v ${{ secrets.VAULT_ADDR }}/v1/sys/health || echo "Curl failed"
+        
+        # Alternative with wget
+        wget -O- ${{ secrets.VAULT_ADDR }}/v1/sys/health || echo "Wget failed"
+        
+        # Simple HTTP test
+        echo "=== HTTP TEST ==="
+        if curl -s -f ${{ secrets.VAULT_ADDR }}/v1/sys/health > /dev/null; then
+          echo "✅ SUCCESS: Vault is reachable"
         else
-          echo "❌ Vault server is NOT reachable"
+          echo "❌ FAILED: Cannot reach Vault"
           echo "Please check:"
-          echo "1. Vault server is running locally"
-          echo "2. Tunnel (ngrok/localtunnel) is active"
-          echo "3. GitHub Secrets VAULT_ADDR is correct"
+          echo "1. Vault server running locally on port 8200"
+          echo "2. Tunnel is active and accessible"
+          echo "3. GitHub Secret VAULT_ADDR is: ${{ secrets.VAULT_ADDR }}"
           exit 1
         fi
-
-    # 3. Setup Docker Buildx
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    # 4. Retrieve secrets from Vault
-    - name: Retrieve secrets from Vault
-      id: vault
-      uses: hashicorp/vault-action@v3
-      with:
-        url: ${{ secrets.VAULT_ADDR }}
-        token: ${{ secrets.VAULT_TOKEN }}
-        secrets: |
-          secret/data/github-actions/docker DOCKERHUB_USERNAME | DOCKER_USERNAME ;
-          secret/data/github-actions/docker DOCKER_PASSWORD | DOCKER_PASSWORD ;
-
-    # 5. Verify Vault secrets
-    - name: Verify Vault secrets
-      run: |
-        echo "=== TEST 1: VAULT SECRET RETRIEVAL ==="
-        if [ -n "${{ steps.vault.outputs.DOCKER_USERNAME }}" ] && [ -n "${{ steps.vault.outputs.DOCKER_PASSWORD }}" ]; then
-          echo "✅ SUCCESS: Secrets retrieved from Vault"
-          echo "Username: ${{ steps.vault.outputs.DOCKER_USERNAME }}"
-          echo "Password: [hidden]"
-        else
-          echo "❌ FAILED: Could not retrieve secrets from Vault"
-          exit 1
-        fi
-
-    # 6. Test Docker Hub authentication
-    - name: Test Docker Hub login
-      run: |
-        echo "=== TEST 2: DOCKER HUB AUTHENTICATION ==="
-        echo "${{ steps.vault.outputs.DOCKER_PASSWORD }}" | docker login \
-          -u "${{ steps.vault.outputs.DOCKER_USERNAME }}" \
-          --password-stdin
-        if [ $? -eq 0 ]; then
-          echo "✅ SUCCESS: Docker Hub login using Vault secrets"
-        else
-          echo "❌ FAILED: Docker Hub authentication failed"
-          exit 1
-        fi
-
-    # 7. Generate unique tag
-    - name: Generate unique tag
-      id: tag
-      run: |
-        TIMESTAMP=$(date +%s)
-        echo "TIMESTAMP=$TIMESTAMP" >> $GITHUB_OUTPUT
-        echo "TEST_TAG=vault-test-$TIMESTAMP" >> $GITHUB_OUTPUT
-        echo "Using tag: vault-test-$TIMESTAMP"
-
-    # 8. Build Docker image with proper tag
-    - name: Build Docker image for testing
-      uses: docker/build-push-action@v4
-      with:
-        context: ./app
-        load: true
-        tags: |
-          ${{ env.IMAGE }}:${{ steps.tag.outputs.TEST_TAG }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-
-    # 9. Trivy security scan
-    - name: Scan with Trivy
-      uses: aquasecurity/trivy-action@master
-      with:
-        image-ref: ${{ env.IMAGE }}:${{ steps.tag.outputs.TEST_TAG }}
-        format: table
-        severity: CRITICAL,HIGH
-
-    # 10. Success report
-    - name: Success report
-      if: success()
-      run: |
-        echo ""
-        echo "🎉🎉🎉 VAULT INTEGRATION TEST PASSED! 🎉🎉🎉"
-        echo ""
-        echo "✅ Vault Integration: WORKING"
-        echo "✅ Docker Hub: WORKING"  
-        echo "✅ Trivy Security: WORKING"
-        echo ""
-        echo "Your secrets are successfully retrieved from HashiCorp Vault!"
-        echo "Test image tag: ${{ env.IMAGE }}:${{ steps.tag.outputs.TEST_TAG }}"
-
-    # 11. Cleanup
-    - name: Docker logout
-      if: always()
-      run: docker logout

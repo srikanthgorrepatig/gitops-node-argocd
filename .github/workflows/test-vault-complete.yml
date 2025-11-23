@@ -5,9 +5,6 @@ on:
   push:
     branches: [ main ]
 
-env:
-  VAULT_ADDR: "http://127.0.0.1:8200"
-
 jobs:
   test-vault-connection:
     runs-on: windows-latest
@@ -22,59 +19,60 @@ jobs:
         Invoke-WebRequest -Uri "https://releases.hashicorp.com/vault/1.21.0/vault_1.21.0_windows_amd64.zip" -OutFile "vault.zip"
         Expand-Archive -Path "vault.zip" -DestinationPath "." -Force
         
-    - name: Start Vault Dev Server in Background
+    - name: Start Vault in Background
+      id: start-vault
       run: |
-        # Start Vault as a background job
-        $vaultProcess = Start-Job -ScriptBlock {
-            .\vault.exe server -dev -dev-listen-address="0.0.0.0:8200"
-        }
+        # Start Vault as a background process
+        Start-Process -FilePath ".\vault.exe" -ArgumentList "server -dev -dev-listen-address=127.0.0.1:8200 -dev-root-token-id=testroottoken" -WindowStyle Hidden -PassThru
+        echo "Vault process started in background"
         
-        # Wait for Vault to start
-        timeout /t 10
-        echo "Vault server starting..."
-        
-    - name: Test Vault Connection
-      run: |
-        $env:VAULT_ADDR="http://127.0.0.1:8200"
-        
-        # Test if Vault is responsive
-        $maxRetries = 10
+        # Wait for Vault to be ready
+        $maxRetries = 30
         $retryCount = 0
         $connected = $false
         
         while ($retryCount -lt $maxRetries -and -not $connected) {
             try {
-                $response = curl http://127.0.0.1:8200/v1/sys/health -ErrorAction SilentlyContinue
+                $response = Invoke-WebRequest -Uri "http://127.0.0.1:8200/v1/sys/health" -ErrorAction SilentlyContinue
                 if ($response.StatusCode -eq 200) {
                     $connected = $true
-                    echo "✅ Vault connection successful!"
-                    .\vault.exe status
+                    echo "✅ Vault is ready!"
                     break
                 }
             } catch {
-                echo "Attempt $($retryCount + 1): Waiting for Vault to start..."
-                timeout /t 2
+                echo "Waiting for Vault to start... ($($retryCount + 1)/$maxRetries)"
+                Start-Sleep -Seconds 1
                 $retryCount++
             }
         }
         
         if (-not $connected) {
-            echo "❌ Failed to connect to Vault after $maxRetries attempts"
+            echo "❌ Vault failed to start within $maxRetries seconds"
             exit 1
         }
         
-    - name: Basic Vault Operations Test
+    - name: Test Vault Operations
       run: |
         $env:VAULT_ADDR="http://127.0.0.1:8200"
-        $env:VAULT_TOKEN="hvs.vpj3FLGvXMwhGM29HwVNh6iE"  # Use the root token from dev mode
+        $env:VAULT_TOKEN="testroottoken"
         
-        # Write a test secret
+        echo "Testing Vault connection..."
+        .\vault.exe status
+        
+        echo "Writing test secret..."
         .\vault.exe kv put secret/hello foo=world
         
-        # Read the test secret
+        echo "Reading test secret..."
         .\vault.exe kv get secret/hello
         
-        # List secrets
+        echo "Listing secrets engines..."
         .\vault.exe secrets list
         
-        echo "✅ Vault operations completed successfully!"
+        echo "✅ All Vault operations completed successfully!"
+        
+    - name: Stop Vault
+      if: always()
+      run: |
+        # Stop any running Vault processes
+        Get-Process -Name "vault" -ErrorAction SilentlyContinue | Stop-Process -Force
+        echo "Vault processes stopped"

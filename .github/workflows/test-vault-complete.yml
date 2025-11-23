@@ -6,7 +6,7 @@ on:
     branches: [ main ]
 
 env:
-  VAULT_ADDR: "http://localhost:8200"
+  VAULT_ADDR: "http://127.0.0.1:8200"
 
 jobs:
   test-vault-connection:
@@ -21,16 +21,60 @@ jobs:
         # Download and extract Vault
         Invoke-WebRequest -Uri "https://releases.hashicorp.com/vault/1.21.0/vault_1.21.0_windows_amd64.zip" -OutFile "vault.zip"
         Expand-Archive -Path "vault.zip" -DestinationPath "." -Force
-        .\vault.exe version
         
-    - name: Start Vault Dev Server
+    - name: Start Vault Dev Server in Background
       run: |
-        Start-Process -FilePath ".\vault.exe" -ArgumentList "server -dev -dev-listen-address=`"0.0.0.0:8200`"" -NoNewWindow
-        timeout /t 5
+        # Start Vault as a background job
+        $vaultProcess = Start-Job -ScriptBlock {
+            .\vault.exe server -dev -dev-listen-address="0.0.0.0:8200"
+        }
         
-    - name: Test Local Vault Connection
+        # Wait for Vault to start
+        timeout /t 10
+        echo "Vault server starting..."
+        
+    - name: Test Vault Connection
       run: |
-        $env:VAULT_ADDR="http://localhost:8200"
-        .\vault.exe status
-        curl http://localhost:8200/v1/sys/health
-        echo "Vault is running locally on port 8200"
+        $env:VAULT_ADDR="http://127.0.0.1:8200"
+        
+        # Test if Vault is responsive
+        $maxRetries = 10
+        $retryCount = 0
+        $connected = $false
+        
+        while ($retryCount -lt $maxRetries -and -not $connected) {
+            try {
+                $response = curl http://127.0.0.1:8200/v1/sys/health -ErrorAction SilentlyContinue
+                if ($response.StatusCode -eq 200) {
+                    $connected = $true
+                    echo "✅ Vault connection successful!"
+                    .\vault.exe status
+                    break
+                }
+            } catch {
+                echo "Attempt $($retryCount + 1): Waiting for Vault to start..."
+                timeout /t 2
+                $retryCount++
+            }
+        }
+        
+        if (-not $connected) {
+            echo "❌ Failed to connect to Vault after $maxRetries attempts"
+            exit 1
+        }
+        
+    - name: Basic Vault Operations Test
+      run: |
+        $env:VAULT_ADDR="http://127.0.0.1:8200"
+        $env:VAULT_TOKEN="hvs.vpj3FLGvXMwhGM29HwVNh6iE"  # Use the root token from dev mode
+        
+        # Write a test secret
+        .\vault.exe kv put secret/hello foo=world
+        
+        # Read the test secret
+        .\vault.exe kv get secret/hello
+        
+        # List secrets
+        .\vault.exe secrets list
+        
+        echo "✅ Vault operations completed successfully!"

@@ -16,31 +16,21 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Setup Vault and Ngrok
+    - name: Setup Vault
       run: |
         # Download and extract Vault
         Invoke-WebRequest -Uri "https://releases.hashicorp.com/vault/1.21.0/vault_1.21.0_windows_amd64.zip" -OutFile "vault.zip"
         Expand-Archive -Path "vault.zip" -DestinationPath "." -Force
         .\vault.exe version
         
-        # Download and setup ngrok
-        Invoke-WebRequest -Uri "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip" -OutFile "ngrok.zip"
-        Expand-Archive -Path "ngrok.zip" -DestinationPath "." -Force
-        
     - name: Start Vault Dev Server
       run: |
         Start-Process -FilePath ".\vault.exe" -ArgumentList "server -dev -dev-listen-address=`"0.0.0.0:8200`"" -NoNewWindow
         timeout /t 5
-        .\vault.exe status
         
-    - name: Start Ngrok Tunnel
-      run: |
-        .\ngrok.exe config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
-        Start-Process -FilePath ".\ngrok.exe" -ArgumentList "http 8200" -NoNewWindow
-        timeout /t 5
-        
-    - name: Test Vault Connection
+    - name: Test Local Vault Connection
       run: |
         $env:VAULT_ADDR="http://localhost:8200"
         .\vault.exe status
         curl http://localhost:8200/v1/sys/health
+        echo "Vault is running locally on port 8200"

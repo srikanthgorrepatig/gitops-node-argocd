@@ -1,32 +1,46 @@
-name: "[TEST] Vault Connection Only"
+name: Vault Integration Test
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ main ]
+
+env:
+  VAULT_ADDR: "http://localhost:8200"
 
 jobs:
-  test-connection:
-    runs-on: ubuntu-latest
+  test-vault-connection:
+    runs-on: windows-latest
+    
     steps:
-    - name: Test Vault connection
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Vault and Ngrok
       run: |
-        echo "Testing connection to: ${{ secrets.VAULT_ADDR }}"
-        echo "URL being tested: ${{ secrets.VAULT_ADDR }}/v1/sys/health"
+        # Download and extract Vault
+        Invoke-WebRequest -Uri "https://releases.hashicorp.com/vault/1.21.0/vault_1.21.0_windows_amd64.zip" -OutFile "vault.zip"
+        Expand-Archive -Path "vault.zip" -DestinationPath "." -Force
+        .\vault.exe version
         
-        # Try different curl options
-        curl -v ${{ secrets.VAULT_ADDR }}/v1/sys/health || echo "Curl failed"
+        # Download and setup ngrok
+        Invoke-WebRequest -Uri "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip" -OutFile "ngrok.zip"
+        Expand-Archive -Path "ngrok.zip" -DestinationPath "." -Force
         
-        # Alternative with wget
-        wget -O- ${{ secrets.VAULT_ADDR }}/v1/sys/health || echo "Wget failed"
+    - name: Start Vault Dev Server
+      run: |
+        Start-Process -FilePath ".\vault.exe" -ArgumentList "server -dev -dev-listen-address=`"0.0.0.0:8200`"" -NoNewWindow
+        timeout /t 5
+        .\vault.exe status
         
-        # Simple HTTP test
-        echo "=== HTTP TEST ==="
-        if curl -s -f ${{ secrets.VAULT_ADDR }}/v1/sys/health > /dev/null; then
-          echo "✅ SUCCESS: Vault is reachable"
-        else
-          echo "❌ FAILED: Cannot reach Vault"
-          echo "Please check:"
-          echo "1. Vault server running locally on port 8200"
-          echo "2. Tunnel is active and accessible"
-          echo "3. GitHub Secret VAULT_ADDR is: ${{ secrets.VAULT_ADDR }}"
-          exit 1
-        fi
+    - name: Start Ngrok Tunnel
+      run: |
+        .\ngrok.exe config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+        Start-Process -FilePath ".\ngrok.exe" -ArgumentList "http 8200" -NoNewWindow
+        timeout /t 5
+        
+    - name: Test Vault Connection
+      run: |
+        $env:VAULT_ADDR="http://localhost:8200"
+        .\vault.exe status
+        curl http://localhost:8200/v1/sys/health

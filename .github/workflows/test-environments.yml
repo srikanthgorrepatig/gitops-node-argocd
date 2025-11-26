@@ -1,0 +1,44 @@
+name: Test Environment Deployment
+
+on:
+  push:
+    branches: [develop, staging]
+  workflow_dispatch:  # Allows manual trigger
+
+jobs:
+  test-dev-deployment:
+    runs-on: ubuntu-latest
+    environment: dev
+    if: github.ref == 'refs/heads/develop'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Test Deployment
+      run: |
+        echo "🚀 Testing Development Environment Deployment"
+        echo "Branch: ${{ github.ref }}"
+        echo "SHA: ${{ github.sha }}"
+        echo "This should appear in GitHub Environments page"
+        
+    - name: Verify Secrets (Optional)
+      run: |
+        echo "Testing if secrets are available..."
+        echo "DEV_DB_PASSWORD length: ${#DEV_DB_PASSWORD}"
+      env:
+        DEV_DB_PASSWORD: ${{ secrets.DEV_DB_PASSWORD }}
+
+  test-staging-deployment:
+    runs-on: ubuntu-latest
+    environment: staging
+    if: github.ref == 'refs/heads/staging'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Test Deployment
+      run: |
+        echo "🚀 Testing Staging Environment Deployment"
+        echo "Branch: ${{ github.ref }}"

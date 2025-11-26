@@ -3,6 +3,8 @@ name: Test Environment Deployment
 on:
   push:
     branches: [develop, staging]
+  release:
+    types: [published]
   workflow_dispatch:  # Allows manual trigger
 
 jobs:
@@ -25,7 +27,7 @@ jobs:
     - name: Verify Secrets (Optional)
       run: |
         echo "Testing if secrets are available..."
-        echo "DEV_DB_PASSWORD length: ${#DEV_DB_PASSWORD}"
+        echo "DEV_DB_PASSWORD is set: ${{ secrets.DEV_DB_PASSWORD != '' }}"
       env:
         DEV_DB_PASSWORD: ${{ secrets.DEV_DB_PASSWORD }}
 
@@ -42,3 +44,69 @@ jobs:
       run: |
         echo "🚀 Testing Staging Environment Deployment"
         echo "Branch: ${{ github.ref }}"
+        
+    - name: Verify Secrets (Optional)
+      run: |
+        echo "Testing if secrets are available..."
+        echo "STAGING_DB_PASSWORD is set: ${{ secrets.STAGING_DB_PASSWORD != '' }}"
+      env:
+        STAGING_DB_PASSWORD: ${{ secrets.STAGING_DB_PASSWORD }}
+
+  test-production-deployment:
+    runs-on: ubuntu-latest
+    environment: production
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Test Production Deployment
+      run: |
+        echo "🚀 DEPLOYING TO PRODUCTION ENVIRONMENT"
+        echo "This requires manual approval"
+        echo "Release Version: ${{ github.event.release.tag_name }}"
+        echo "Release Title: ${{ github.event.release.name }}"
+        echo "Release Body: ${{ github.event.release.body }}"
+        
+    - name: Verify Production Secrets
+      run: |
+        echo "Testing production secrets..."
+        echo "PROD_DB_PASSWORD is set: ${{ secrets.PROD_DB_PASSWORD != '' }}"
+        echo "PROD_API_KEY is set: ${{ secrets.PROD_API_KEY != '' }}"
+      env:
+        PROD_DB_PASSWORD: ${{ secrets.PROD_DB_PASSWORD }}
+        PROD_API_KEY: ${{ secrets.PROD_API_KEY }}
+        
+    - name: Production Verification
+      run: |
+        echo "✅ Production deployment simulation completed"
+        echo "Environment: production"
+        echo "Deployment SHA: ${{ github.sha }}"
+        echo "Workflow: ${{ github.workflow }}"
+
+  # Optional: Create release automatically from staging
+  create-release:
+    runs-on: ubuntu-latest
+    environment: staging
+    if: github.ref == 'refs/heads/staging' && github.event_name == 'push'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Create Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v1.0.${{ github.run_number }}
+        release_name: Auto Release v1.0.${{ github.run_number }}
+        body: |
+          Automated release from staging environment
+          - Build: ${{ github.sha }}
+          - Environment: Staging
+          - Workflow: ${{ github.workflow }}
+          - Triggered by: ${{ github.actor }}
+        draft: false
+        prerelease: false

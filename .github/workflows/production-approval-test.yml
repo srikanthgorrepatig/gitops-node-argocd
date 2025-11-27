@@ -1,0 +1,19 @@
+name: Production Approval Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  production-deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      
+    - name: Production Deployment
+      run: |
+        echo "🚀 PRODUCTION DEPLOYMENT - REQUIRES APPROVAL"
+        echo "If you see this, approval worked!"
+        echo "Release test successful"

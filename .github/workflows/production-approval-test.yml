@@ -1,19 +1,72 @@
-name: Production Approval Test
+name: Production Deployment with Approval
 
 on:
+  push:
+    branches: [master]
   workflow_dispatch:
 
 jobs:
-  production-deploy:
+  deploy-to-production:
     runs-on: ubuntu-latest
+    
+    # This is the KEY LINE - enables approval gate
     environment: production
     
     steps:
-    - name: Checkout
+    - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Production Deployment
+    - name: Display deployment info
       run: |
-        echo "🚀 PRODUCTION DEPLOYMENT - REQUIRES APPROVAL"
-        echo "If you see this, approval worked!"
-        echo "Release test successful"
+        echo "🚀 PRODUCTION DEPLOYMENT INITIATED"
+        echo "=================================="
+        echo "Repository: ${{ github.repository }}"
+        echo "Branch: ${{ github.ref_name }}"
+        echo "Commit SHA: ${{ github.sha }}"
+        echo "Triggered by: ${{ github.actor }}"
+        echo "Run Number: ${{ github.run_number }}"
+        echo "=================================="
+        
+    - name: Wait for manual approval
+      run: |
+        echo "🛑 MANUAL APPROVAL REQUIRED"
+        echo "============================"
+        echo "To approve this deployment:"
+        echo "1. Go to Actions tab"
+        echo "2. Click on this workflow run"
+        echo "3. Click 'Review deployments' (right sidebar)"
+        echo "4. Click 'Approve'"
+        echo "============================"
+        echo "Waiting for approval..."
+        
+    - name: Deploy to production
+      run: |
+        echo "✅ APPROVAL RECEIVED!"
+        echo "Starting production deployment..."
+        echo "Timestamp: $(date)"
+        
+        # ========================================
+        # ADD YOUR DEPLOYMENT COMMANDS HERE
+        # ========================================
+        
+        # Example commands (choose based on your setup):
+        
+        # 1. For Docker/Container deployment:
+        # docker-compose -f docker-compose.prod.yml up -d
+        
+        # 2. For Kubernetes:
+        # kubectl apply -f k8s/production/
+        # kubectl rollout status deployment/my-app
+        
+        # 3. For AWS deployment:
+        # aws s3 sync ./dist s3://your-prod-bucket
+        # aws cloudfront create-invalidation --distribution-id YOUR_ID --paths "/*"
+        
+        # 4. For simple script deployment:
+        # ./deploy-prod.sh
+        
+        # 5. For Heroku:
+        # git push heroku master
+        
+        echo "🎉 PRODUCTION DEPLOYMENT COMPLETED!"
+        echo "Deployment finished at: $(date)"
